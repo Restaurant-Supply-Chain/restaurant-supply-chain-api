@@ -1,8 +1,14 @@
+import math
+from datetime import datetime, timedelta, timezone
+
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
-from app.core.security import hash_password
-from app.crud.user import create_user, get_user_by_email, get_user_by_phone
+from app.core.config import settings
+from app.core.constants import UserStatus
+from app.core.security import create_token, hash_password, hash_token, verify_password
+from app.crud.user import create_user, get_user_by_email, get_user_by_phone, get_user_for_login
+from app.models.refresh_token import RefreshToken
 
 
 def register_user(db, data):
@@ -14,9 +20,67 @@ def register_user(db, data):
     password_hash = hash_password(data.password)
     try:
         return create_user(db, data, password_hash)
+    # Concurrent registrations can still hit the database uniqueness rule.
     except IntegrityError as error:
         db.rollback()
         # MySQL error 1062 means another request inserted the same unique value.
         if error.orig.args[0] == 1062:
             raise HTTPException(status_code=409, detail="Email or phone is already registered.") from error
         raise
+
+
+def login_user(db, data, ip_address=None, user_agent=None):
+    # MySQL DATETIME values are stored as UTC without timezone information.
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    user = get_user_for_login(db, data.email)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+
+    if user.locked_until and user.locked_until > now:
+        retry_after = math.ceil((user.locked_until - now).total_seconds())
+        raise HTTPException(status_code=429, detail="Account is temporarily locked.",
+                            headers={"Retry-After": str(retry_after)})
+
+    # Start a fresh attempt count after a previous lock has expired.
+    if user.locked_until:
+        user.locked_until = None
+        user.failed_login_count = 0
+
+    if not verify_password(data.password, user.password_hash):
+        user.failed_login_count += 1
+        if user.failed_login_count >= settings.LOGIN_MAX_ATTEMPTS:
+            user.locked_until = now + timedelta(minutes=settings.LOGIN_LOCK_MINUTES)
+        db.commit()
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+
+    if user.status != UserStatus.ACTIVE:
+        raise HTTPException(status_code=403, detail="Account must be active to log in.")
+
+    tokens = issue_tokens(db, user, now, ip_address, user_agent)
+    user.failed_login_count = 0
+    user.locked_until = None
+    user.last_login_at = now
+    db.commit()
+    return tokens
+
+
+def issue_tokens(db, user, now, ip_address, user_agent):
+    # Login and refresh use the same token lifetimes and storage rules.
+    access_expiry = now + timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
+    refresh_expiry = now + timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS)
+    access_token = create_token(user.uuid, "access", access_expiry)
+    refresh_token = create_token(user.uuid, "refresh", refresh_expiry)
+    db.add(RefreshToken(
+        user_id=user.id,
+        token_hash=hash_token(refresh_token),
+        expires_at=refresh_expiry,
+        ip_address=ip_address,
+        user_agent=user_agent[:255] if user_agent else None,
+    ))
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "expires_in": settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    }

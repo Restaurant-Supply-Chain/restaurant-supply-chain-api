@@ -27,6 +27,11 @@ def test_registration_hashes_password_and_normalizes_email(client, db, payload):
     user = db.get(User, result["id"])
     assert user.password_hash != payload["password"]
     assert verify_password(payload["password"], user.password_hash)
+    login = client.post("/auth/login", json={
+        "email": result["email"], "password": payload["password"],
+    })
+    assert login.status_code == 200
+    assert "access_token" in login.json()
 
 
 def test_duplicate_email_is_a_problem_response(client, payload):

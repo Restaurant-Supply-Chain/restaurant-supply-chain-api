@@ -35,6 +35,7 @@ Open **[Swagger UI](http://127.0.0.1:8000/docs)** to try the API.
 | Method | Endpoint | Purpose |
 |---|---|---|
 | POST | `/auth/register` | Create an active account |
+| POST | `/auth/login` | Get access and refresh tokens |
 
 ### 1. Register
 
@@ -54,6 +55,21 @@ is `RESTAURANT_ADMIN`. New accounts are active immediately.
 at least eight characters, uppercase and lowercase letters, a digit, and
 a special character, with a maximum of 72 UTF-8 bytes for bcrypt.
 
+### 2. Log in
+
+Use the same endpoint for every role:
+
+```json
+{
+  "email": "dev.one@example.com",
+  "password": "Practice123!"
+}
+```
+
+Access tokens last **15 minutes**; refresh tokens last **7 days**.
+Five failed attempts lock the account for **15 minutes**. Only active
+accounts can log in.
+
 ## Tests
 
 With MySQL running and migrations applied:
@@ -63,7 +79,7 @@ python -m pytest app/tests -q
 ```
 
 Tests roll back their database changes. Passwords are stored as bcrypt
-hashes. HTTP and validation
+hashes; refresh tokens are stored as SHA-256 hashes. HTTP and validation
 errors use `application/problem+json`.
 
 ## Useful commands
@@ -81,5 +97,5 @@ credentials are ignored by Git.
 
 ## Coming next
 
-Login, refresh rotation, logout, current-user profile, password reset, RBAC, audit logs,
+Refresh rotation, logout, current-user profile, password reset, RBAC, audit logs,
 notifications, and authentication rate limiting.

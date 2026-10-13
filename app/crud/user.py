@@ -10,6 +10,11 @@ def get_user_by_phone(db, phone):
     return db.query(User).filter(User.phone == phone).first()
 
 
+def get_user_for_login(db, email):
+    # Lock this user row until commit so failed-login updates do not overlap.
+    return db.query(User).filter(User.email == email).with_for_update().first()
+
+
 def create_user(db, data, password_hash):
     user = User(
         full_name=data.full_name,
