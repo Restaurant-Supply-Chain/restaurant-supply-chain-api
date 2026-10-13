@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.schemas.auth import TokenResponse, UserLogin
+from app.schemas.auth import RefreshRequest, TokenResponse, UserLogin
 from app.schemas.user import UserRegister, UserResponse
-from app.services.auth import login_user, register_user
+from app.services.auth import login_user, refresh_user_tokens, register_user
 
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -19,3 +19,9 @@ def register(data: UserRegister, db: Session = Depends(get_db)):
 def login(data: UserLogin, request: Request, db: Session = Depends(get_db)):
     ip_address = request.client.host if request.client else None
     return login_user(db, data, ip_address, request.headers.get("user-agent"))
+
+
+@router.post("/refresh", response_model=TokenResponse)
+def refresh(data: RefreshRequest, request: Request, db: Session = Depends(get_db)):
+    ip_address = request.client.host if request.client else None
+    return refresh_user_tokens(db, data, ip_address, request.headers.get("user-agent"))

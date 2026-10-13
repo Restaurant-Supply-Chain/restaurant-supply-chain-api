@@ -36,6 +36,7 @@ Open **[Swagger UI](http://127.0.0.1:8000/docs)** to try the API.
 |---|---|---|
 | POST | `/auth/register` | Create an active account |
 | POST | `/auth/login` | Get access and refresh tokens |
+| POST | `/auth/refresh` | Replace tokens and revoke the old refresh token |
 
 ### 1. Register
 
@@ -70,6 +71,19 @@ Access tokens last **15 minutes**; refresh tokens last **7 days**.
 Five failed attempts lock the account for **15 minutes**. Only active
 accounts can log in.
 
+### 3. Refresh
+
+Submit the refresh token returned by login:
+
+```json
+{
+  "refresh_token": "paste-your-refresh-token-here"
+}
+```
+
+Save both tokens from the response. The previous refresh token cannot be
+reused; use the newest one next time.
+
 ## Tests
 
 With MySQL running and migrations applied:
@@ -97,5 +111,5 @@ credentials are ignored by Git.
 
 ## Coming next
 
-Refresh rotation, logout, current-user profile, password reset, RBAC, audit logs,
+Logout, current-user profile, password reset, RBAC, audit logs,
 notifications, and authentication rate limiting.

@@ -2,7 +2,7 @@ import hashlib
 from datetime import timezone
 from uuid import uuid4
 
-from jose import jwt
+from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from app.core.config import settings
@@ -32,3 +32,16 @@ def create_token(user_uuid, token_type, expires_at):
 def hash_token(token):
     # Store a hash so the database does not contain usable refresh tokens.
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def decode_token(token, expected_type):
+    # Verify signature and expiry before trusting any token fields.
+    payload = jwt.decode(
+        token,
+        settings.JWT_SECRET_KEY,
+        algorithms=[settings.JWT_ALGORITHM],
+        options={"require_exp": True, "require_sub": True, "require_jti": True},
+    )
+    if payload.get("type") != expected_type:
+        raise JWTError("Incorrect token type")
+    return payload
