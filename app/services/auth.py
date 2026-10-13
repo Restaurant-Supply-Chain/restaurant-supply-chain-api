@@ -114,3 +114,27 @@ def refresh_user_tokens(db, data, ip_address=None, user_agent=None):
     tokens = issue_tokens(db, user, now, ip_address, user_agent)
     db.commit()
     return tokens
+
+
+def logout_user(db, data):
+    try:
+        claims = decode_token(data.refresh_token, "refresh")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token.")
+
+    user = db.query(User).filter(User.uuid == claims["sub"]).with_for_update().first()
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token.")
+
+    stored_token = db.query(RefreshToken).filter(
+        RefreshToken.token_hash == hash_token(data.refresh_token),
+        RefreshToken.user_id == user.id,
+    ).with_for_update().first()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if not stored_token or stored_token.expires_at <= now:
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token.")
+
+    # Repeated logout succeeds without changing the original revocation time.
+    if stored_token.revoked_at is None:
+        stored_token.revoked_at = now
+    db.commit()

@@ -1,7 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from uuid import uuid4
 
-import pytest
 from jose import jwt
 
 from app.core.config import settings
@@ -9,20 +7,6 @@ from app.core.constants import UserStatus
 from app.core.security import create_token, hash_token
 from app.main import app
 from app.models.refresh_token import RefreshToken
-from app.models.user import User
-
-
-@pytest.fixture
-def login_tokens(client, db):
-    email = uuid4().hex + "@example.com"
-    registered = client.post("/auth/register", json={
-        "full_name": "Refresh Test", "email": email, "password": "Practice123!",
-    })
-    assert registered.status_code == 201
-    user = db.get(User, registered.json()["id"])
-    response = client.post("/auth/login", json={"email": email, "password": "Practice123!"})
-    assert response.status_code == 200
-    return user, response.json()
 
 
 def refresh(client, token):

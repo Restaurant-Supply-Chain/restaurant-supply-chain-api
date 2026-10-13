@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.schemas.auth import RefreshRequest, TokenResponse, UserLogin
 from app.schemas.user import UserRegister, UserResponse
-from app.services.auth import login_user, refresh_user_tokens, register_user
+from app.services.auth import login_user, logout_user, refresh_user_tokens, register_user
 
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -25,3 +25,9 @@ def login(data: UserLogin, request: Request, db: Session = Depends(get_db)):
 def refresh(data: RefreshRequest, request: Request, db: Session = Depends(get_db)):
     ip_address = request.client.host if request.client else None
     return refresh_user_tokens(db, data, ip_address, request.headers.get("user-agent"))
+
+
+@router.post("/logout", status_code=204)
+def logout(data: RefreshRequest, db: Session = Depends(get_db)):
+    logout_user(db, data)
+    return Response(status_code=204)

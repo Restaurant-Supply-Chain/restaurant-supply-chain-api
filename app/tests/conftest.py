@@ -1,9 +1,12 @@
+from uuid import uuid4
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.db.session import engine, get_db
 from app.main import app
+from app.models.user import User
 
 
 @pytest.fixture
@@ -31,3 +34,15 @@ def client(db):
             yield test_client
     finally:
         app.dependency_overrides.pop(get_db, None)
+
+@pytest.fixture
+def login_tokens(client, db):
+    email = uuid4().hex + "@example.com"
+    registered = client.post("/auth/register", json={
+        "full_name": "Session Test", "email": email, "password": "Practice123!",
+    })
+    assert registered.status_code == 201
+    user = db.get(User, registered.json()["id"])
+    response = client.post("/auth/login", json={"email": email, "password": "Practice123!"})
+    assert response.status_code == 200
+    return user, response.json()
