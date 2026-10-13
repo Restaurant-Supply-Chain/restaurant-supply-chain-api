@@ -18,8 +18,8 @@ addresses = []
 
 
 @app.get("/")
-def home():
-    return {"message": "Restaurant API running"}
+def homes():
+    return {"message": "Restaurant API   nisa running"}
 
 # Restaurant CRUD
 
