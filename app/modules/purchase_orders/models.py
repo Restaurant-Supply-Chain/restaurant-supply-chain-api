@@ -1,16 +1,21 @@
+
 from enum import Enum
+
+# IMPORTANT: change this import if your existing shared Base is in another file.
+from app.db.base import Base
 from sqlalchemy import (
     BigInteger,
     Date,
     DateTime,
-    Enum as SAEnum,
     ForeignKey,
     Numeric,
     String,
     func,
 )
+from sqlalchemy import (
+    Enum as SAEnum,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from app.db.base import Base
 
 
 def enum_values(enum_cls):
@@ -166,4 +171,3 @@ class GRNItem(Base):
     )
 
     grn: Mapped["GoodsReceiptNote"] = relationship(back_populates="items")
-

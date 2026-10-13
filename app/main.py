@@ -1,5 +1,9 @@
-@"
+
 from fastapi import FastAPI
+
+from app.modules.purchase_orders.router import (
+    router as purchase_orders_router,
+)
 
 app = FastAPI(
     title="Restaurant Supply Chain API",
@@ -11,4 +15,3 @@ app = FastAPI(
 @app.get("/health", tags=["Health"])
 def health_check():
     return {"status": "ok", "service": "rsc-api"}
-"@ | Out-File -Encoding utf8 app\main.py
