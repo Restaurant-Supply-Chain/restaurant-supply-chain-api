@@ -1,5 +1,4 @@
 import re
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -11,8 +10,8 @@ class UserRegister(BaseModel):
     email: EmailStr = Field(max_length=254)
     phone: str | None = Field(default=None, pattern=r"^\+?[1-9]\d{7,14}$", max_length=20)
     password: str = Field(min_length=8)
-    # Staff, drivers, and platform admins cannot sign up with those roles directly.
-    role: Literal[UserRole.RESTAURANT_ADMIN, UserRole.SUPPLIER_ADMIN] = UserRole.RESTAURANT_ADMIN
+    # All six roles can be selected in this practice project's signup.
+    role: UserRole = UserRole.RESTAURANT_ADMIN
 
     @field_validator("email", "full_name", mode="before")
     @classmethod

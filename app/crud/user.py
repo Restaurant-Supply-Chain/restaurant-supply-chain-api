@@ -1,3 +1,4 @@
+from app.core.constants import UserStatus
 from app.models.user import User
 
 
@@ -16,6 +17,8 @@ def create_user(db, data, password_hash):
         phone=data.phone,
         password_hash=password_hash,
         role=data.role,
+        # Practice signup activates the account so it can log in immediately.
+        status=UserStatus.ACTIVE,
     )
     db.add(user)
     db.commit()

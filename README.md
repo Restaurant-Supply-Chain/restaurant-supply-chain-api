@@ -1,10 +1,12 @@
 # Restaurant Supply Chain API
 
-Practice backend built with Python 3.11+, FastAPI, MySQL 8.0, SQLAlchemy, and Alembic.
+A practice backend for managing the restaurant supply chain.
 
-## Local setup (PowerShell)
+**Python 3.11+ · FastAPI · MySQL 8 · SQLAlchemy · Alembic · JWT**
 
-Run these commands from the repository root:
+## Quick start
+
+Run these commands from the repository root in PowerShell:
 
 ```powershell
 py -3.11 -m venv .venv
@@ -13,81 +15,71 @@ python -m pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-Copy the environment file only on first setup. Update `.env` with your local
-MySQL credentials and replace `JWT_SECRET_KEY` with a random secret.
-`.env` and `.venv` are ignored by Git.
+Copy `.env.example` only on first setup. Edit `.env` with your database
+password and a random `JWT_SECRET_KEY`. For Docker, use `DB_HOST=localhost`
+and `DB_USER=root`. If port 3306 is occupied, set `DB_PORT=3307`.
 
-## Local MySQL and migrations
-
-Start Docker Desktop. For the local Docker database, use `DB_HOST=localhost`,
-`DB_USER=root`, and set `DB_PASSWORD` in `.env`. The configured `DB_PORT` is
-the port exposed on your computer; the container uses MySQL's port 3306.
+Start Docker Desktop, then run:
 
 ```powershell
 docker compose up -d db
-```
-
-Once MySQL is ready, apply the migrations:
-
-```powershell
+# Wait for MySQL to be ready before applying migrations.
 python -m alembic upgrade head
-```
-
-The first migration creates only `users`. Other Dev1 modules will be added
-one at a time. Other developers add migrations for their own tables.
-
-When adding models, import them in `app/models/__init__.py` before generating
-a migration. Review generated migrations before applying them:
-
-```powershell
-python -m alembic revision --autogenerate -m "Describe schema change"
-python -m alembic upgrade head
-```
-
-MySQL data is kept in a Docker volume. `docker compose stop db` stops the
-database while keeping its data. Datetimes in these tables are stored in UTC.
-
-## Run the API
-
-With the virtual environment activated:
-
-```powershell
 python -m uvicorn app.main:app --reload
 ```
 
-- Swagger UI: http://127.0.0.1:8000/docs
-- OpenAPI schema: http://127.0.0.1:8000/openapi.json
+Open **[Swagger UI](http://127.0.0.1:8000/docs)** to try the API.
 
-## Registration
+## Available endpoints
 
-`POST /auth/register` creates a user with `PENDING` status. Public registration
-allows `RESTAURANT_ADMIN` and `SUPPLIER_ADMIN`; other roles will be assigned
-through controlled user management. The password is stored as a bcrypt hash.
+| Method | Endpoint | Purpose |
+|---|---|---|
+| POST | `/auth/register` | Create an active account |
 
-Example request in Swagger UI:
+### 1. Register
+
+Choose any of the six roles from the role dropdown in Swagger. The default
+is `RESTAURANT_ADMIN`. New accounts are active immediately.
 
 ```json
 {
   "full_name": "Dev One",
   "email": "dev.one@example.com",
-  "phone": "+919876543210",
   "password": "Practice123!",
   "role": "RESTAURANT_ADMIN"
 }
 ```
 
-Successful registration returns HTTP 201 without the password or hash.
-Duplicate email/phone returns 409, and invalid input returns 422. Errors use
-`application/problem+json`. Passwords require at least eight characters,
-uppercase and lowercase letters, a digit, and a special character; bcrypt
-passwords are limited to 72 UTF-8 bytes to avoid truncation.
+`phone` is optional. Email is normalized to lowercase. Passwords require
+at least eight characters, uppercase and lowercase letters, a digit, and
+a special character, with a maximum of 72 UTF-8 bytes for bcrypt.
 
-## Registration tests
+## Tests
 
-Start MySQL and apply the migration, then run:
+With MySQL running and migrations applied:
 
 ```powershell
-python -m pytest app/tests/test_register.py -q
+python -m pytest app/tests -q
 ```
 
-Tests run database operations inside transactions and roll back their users.
+Tests roll back their database changes. Passwords are stored as bcrypt
+hashes. HTTP and validation
+errors use `application/problem+json`.
+
+## Useful commands
+
+| Task | Command |
+|---|---|
+| Apply migrations | `python -m alembic upgrade head` |
+| Create a migration | `python -m alembic revision --autogenerate -m "describe change"` |
+| Check schema changes | `python -m alembic check` |
+| Stop MySQL and keep data | `docker compose stop db` |
+
+Import new models in `app/models/__init__.py` and review generated
+migrations before applying them. `.env`, `.venv`, and local admin
+credentials are ignored by Git.
+
+## Coming next
+
+Login, refresh rotation, logout, current-user profile, password reset, RBAC, audit logs,
+notifications, and authentication rate limiting.
