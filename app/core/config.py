@@ -1,4 +1,3 @@
-@"
 from pydantic_settings import BaseSettings
 
 
@@ -22,4 +21,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-"@ | Out-File -Encoding utf8 app\core\config.py
