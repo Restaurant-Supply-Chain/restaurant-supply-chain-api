@@ -1,25 +1,17 @@
 from fastapi import FastAPI, HTTPException
-from schemas import RestaurantCreate, OutletCreate, AddressCreate
+from app.schemas import RestaurantCreate, OutletCreate, AddressCreate
 
-app = FastAPI()
+app = FastAPI(title="Restaurant Supply Chain API")
 
-restaurants = [{"id": 1, "name": "ABC Restaurant", "cuisine_type": "South Indian", "location": "Chennai", "phone": "9876543210", "status": "ACTIVE"},
-    {"id": 2, "name": "Green Leaf Restaurant", "cuisine_type": "North Indian", "location": "Coimbatore", "phone": "9876543211", "status": "ACTIVE"},
-    {"id": 3, "name": "Spicy Hub", "cuisine_type": "Chinese", "location": "Madurai", "phone": "9876543212", "status": "ACTIVE"},
-    {"id": 4, "name": "Royal Meals", "cuisine_type": "Tamil Meals", "location": "Namakkal", "phone": "9876543213", "status": "ACTIVE"},
-    {"id": 5, "name": "Food Palace", "cuisine_type": "Italian", "location": "Salem", "phone": "9876543214", "status": "ACTIVE"},
-    {"id": 6, "name": "Fresh Bites", "cuisine_type": "Fast Food", "location": "Trichy", "phone": "9876543215", "status": "ACTIVE"},
-    {"id": 7, "name": "Spice Garden", "cuisine_type": "Chettinad", "location": "Karaikudi", "phone": "9876543216", "status": "ACTIVE"},
-    {"id": 8, "name": "Burger Point", "cuisine_type": "American", "location": "Bangalore", "phone": "9876543217", "status": "ACTIVE"},
-    {"id": 9, "name": "Ocean Delight", "cuisine_type": "Seafood", "location": "Pondicherry", "phone": "9876543218", "status": "ACTIVE"},
-    {"id": 10, "name": "Morning Fresh Cafe", "cuisine_type": "Cafe", "location": "Erode", "phone": "9876543219", "status": "ACTIVE"}]
+restaurants = []
 outlets = []
 addresses = []
 
 
 @app.get("/")
-def homes():
-    return {"message": "Restaurant API   nisa running"}
+def home():
+    return {"message": "Restaurant API running"}
+
 
 # Restaurant CRUD
 
@@ -118,3 +110,4 @@ def delete_address(id: int):
             addresses.remove(a)
             return {"message": "Address deleted"}
     raise HTTPException(status_code=404, detail="Address not found")
+
