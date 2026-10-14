@@ -1,4 +1,3 @@
-@"
 from fastapi import FastAPI
 
 app = FastAPI(
@@ -10,5 +9,4 @@ app = FastAPI(
 
 @app.get("/health", tags=["Health"])
 def health_check():
-    return {"status": "ok", "service": "rsc-api"}
-"@ | Out-File -Encoding utf8 app\main.py
+    return {"status": "ok", "service": "rsc-api-safeer"}
