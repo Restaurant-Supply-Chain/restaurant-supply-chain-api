@@ -14,6 +14,7 @@ app = FastAPI(
 )
 
 # Use the same problem format for HTTP errors and invalid input.
+# This ensures a consistent error response format across the API.
 app.add_exception_handler(HTTPException, http_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.include_router(auth_router)

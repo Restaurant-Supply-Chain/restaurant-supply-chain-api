@@ -36,3 +36,13 @@ def get_current_user(
     if user.status != UserStatus.ACTIVE:
         raise HTTPException(status_code=403, detail="Account must be active.")
     return user
+
+
+def require_role(*allowed_roles):
+    # Reuse login checks, then compare the user's current database role.
+    def check_role(current_user=Depends(get_current_user)):
+        if current_user.role not in allowed_roles:
+            raise HTTPException(status_code=403, detail="Your role cannot access this resource.")
+        return current_user
+
+    return check_role
