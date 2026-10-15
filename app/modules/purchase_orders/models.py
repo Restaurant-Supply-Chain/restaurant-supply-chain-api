@@ -1,173 +1,143 @@
 
-from enum import Enum
+from fastapi import HTTPException
+from sqlalchemy.orm import Session
 
-# IMPORTANT: change this import if your existing shared Base is in another file.
-from app.db.base import Base
-from sqlalchemy import (
-    BigInteger,
-    Date,
-    DateTime,
-    ForeignKey,
-    Numeric,
-    String,
-    func,
+from app.modules.purchase_orders.models import (
+    GoodsReceiptNote,
+    GRNItem,
+    PurchaseOrder,
+    PurchaseOrderItem,
 )
-from sqlalchemy import (
-    Enum as SAEnum,
-)
-from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 
-def enum_values(enum_cls):
-    return [member.value for member in enum_cls]
+def confirm_grn(db: Session, grn_id: int):
+    try:
+        grn = (
+            db.query(GoodsReceiptNote)
+            .filter(GoodsReceiptNote.id == grn_id)
+            .with_for_update()
+            .first()
+        )
 
+        if grn is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Goods receipt note not found",
+            )
 
-class POStatus(str, Enum):
-    DRAFT = "DRAFT"
-    SUBMITTED = "SUBMITTED"
-    APPROVED = "APPROVED"
-    PARTIALLY_RECEIVED = "PARTIALLY_RECEIVED"
-    RECEIVED = "RECEIVED"
-    CANCELLED = "CANCELLED"
-    CLOSED = "CLOSED"
+        if grn.status == "CONFIRMED":
+            raise HTTPException(
+                status_code=409,
+                detail="GRN is already confirmed",
+            )
 
+        if grn.status != "PENDING":
+            raise HTTPException(
+                status_code=400,
+                detail="Only pending GRNs can be confirmed",
+            )
 
-class ReceivedStatus(str, Enum):
-    PENDING = "PENDING"
-    PARTIAL = "PARTIAL"
-    COMPLETE = "COMPLETE"
+        po = (
+            db.query(PurchaseOrder)
+            .filter(PurchaseOrder.id == grn.po_id)
+            .with_for_update()
+            .first()
+        )
 
+        if po is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Purchase order not found",
+            )
 
-class GRNStatus(str, Enum):
-    DRAFT = "DRAFT"
-    CONFIRMED = "CONFIRMED"
-    REJECTED = "REJECTED"
+        if po.status not in ("APPROVED", "PARTIALLY_RECEIVED"):
+            raise HTTPException(
+                status_code=400,
+                detail="Purchase order cannot receive items in its current status",
+            )
 
+        grn_items = (
+            db.query(GRNItem)
+            .filter(GRNItem.grn_id == grn.id)
+            .all()
+        )
 
-class QCStatus(str, Enum):
-    PASS = "PASS"
-    FAIL = "FAIL"
-    PARTIAL = "PARTIAL"
+        if not grn_items:
+            raise HTTPException(
+                status_code=400,
+                detail="GRN must contain at least one item",
+            )
 
+        po_items = (
+            db.query(PurchaseOrderItem)
+            .filter(PurchaseOrderItem.po_id == po.id)
+            .with_for_update()
+            .all()
+        )
 
-class PurchaseOrder(Base):
-    __tablename__ = "purchase_orders"
+        po_items_by_product = {
+            item.product_id: item for item in po_items
+        }
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    po_number: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
-    restaurant_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("restaurants.id"), nullable=False
-    )
-    supplier_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("suppliers.id"), nullable=False
-    )
-    warehouse_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("warehouses.id"), nullable=False
-    )
-    status: Mapped[POStatus] = mapped_column(
-        SAEnum(POStatus, values_callable=enum_values, name="po_status"),
-        default=POStatus.DRAFT,
-        nullable=False,
-    )
-    order_date: Mapped[Date] = mapped_column(Date, nullable=False)
-    expected_date: Mapped[Date] = mapped_column(Date, nullable=False)
-    subtotal: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
-    tax_amount: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
-    discount_amount: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
-    total_amount: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
-    currency: Mapped[str] = mapped_column(String(3), default="INR")
-    payment_terms: Mapped[str | None] = mapped_column(String(40))
-    notes: Mapped[str | None] = mapped_column(String(500))
-    created_by: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("users.id"), nullable=False
-    )
-    approved_by: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("users.id"), nullable=True
-    )
+        # Validate every line before changing quantities.
+        received_by_product = {}
 
-    items: Mapped[list["PurchaseOrderItem"]] = relationship(
-        back_populates="purchase_order", cascade="all, delete-orphan"
-    )
+        for item in grn_items:
+            quantity = item.qty_received
 
+            if quantity is None or quantity <= 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Received quantity must be greater than zero",
+                )
 
-class PurchaseOrderItem(Base):
-    __tablename__ = "purchase_order_items"
+            if item.product_id not in po_items_by_product:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Product {item.product_id} is not in the purchase order",
+                )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    po_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("purchase_orders.id"), nullable=False
-    )
-    product_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("products.id"), nullable=False
-    )
-    qty_ordered: Mapped[float] = mapped_column(Numeric(14, 3), nullable=False)
-    qty_received: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
-    unit_price: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
-    tax_rate: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
-    line_total: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
-    received_status: Mapped[ReceivedStatus] = mapped_column(
-        SAEnum(
-            ReceivedStatus,
-            values_callable=enum_values,
-            name="received_status",
-        ),
-        default=ReceivedStatus.PENDING,
-        nullable=False,
-    )
+            received_by_product[item.product_id] = (
+                received_by_product.get(item.product_id, 0) + quantity
+            )
 
-    purchase_order: Mapped["PurchaseOrder"] = relationship(back_populates="items")
+        for product_id, quantity in received_by_product.items():
+            po_item = po_items_by_product[product_id]
 
+            if po_item.qty_received + quantity > po_item.qty_ordered:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Received quantity exceeds ordered quantity for product {product_id}",
+                )
 
-class GoodsReceiptNote(Base):
-    __tablename__ = "goods_receipt_notes"
+        # Update purchase-order quantities.
+        for product_id, quantity in received_by_product.items():
+            po_item = po_items_by_product[product_id]
+            po_item.qty_received += quantity
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    grn_no: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
-    po_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("purchase_orders.id"), nullable=False
-    )
-    received_by: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("users.id"), nullable=False
-    )
-    received_at: Mapped[DateTime] = mapped_column(
-        DateTime, server_default=func.now(), nullable=False
-    )
-    warehouse_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("warehouses.id"), nullable=False
-    )
-    status: Mapped[GRNStatus] = mapped_column(
-        SAEnum(GRNStatus, values_callable=enum_values, name="grn_status"),
-        default=GRNStatus.DRAFT,
-        nullable=False,
-    )
-    notes: Mapped[str | None] = mapped_column(String(500))
+            po_item.received_status = (
+                "COMPLETE"
+                if po_item.qty_received >= po_item.qty_ordered
+                else "PARTIAL"
+            )
 
-    items: Mapped[list["GRNItem"]] = relationship(
-        back_populates="grn", cascade="all, delete-orphan"
-    )
+        all_received = all(
+            item.qty_received >= item.qty_ordered
+            for item in po_items
+        )
 
+        po.status = (
+            "RECEIVED" if all_received else "PARTIALLY_RECEIVED"
+        )
 
-class GRNItem(Base):
-    __tablename__ = "grn_items"
+        # Mark the GRN confirmed only after its PO quantities are updated.
+        grn.status = "CONFIRMED"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    grn_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("goods_receipt_notes.id"), nullable=False
-    )
-    po_item_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("purchase_order_items.id"), nullable=False
-    )
-    product_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("products.id"), nullable=False
-    )
-    qty_received: Mapped[float] = mapped_column(Numeric(14, 3), nullable=False)
-    batch_no: Mapped[str | None] = mapped_column(String(64))
-    expiry_date: Mapped[Date | None] = mapped_column(Date)
-    unit_cost: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
-    qc_status: Mapped[QCStatus] = mapped_column(
-        SAEnum(QCStatus, values_callable=enum_values, name="qc_status"),
-        default=QCStatus.PASS,
-        nullable=False,
-    )
+        db.commit()
+        db.refresh(grn)
 
-    grn: Mapped["GoodsReceiptNote"] = relationship(back_populates="items")
+        return grn
+
+    except Exception:
+        db.rollback()
+        raise
