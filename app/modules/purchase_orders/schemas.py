@@ -2,7 +2,13 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from app.modules.purchase_orders.models import (
     POStatus,
@@ -12,11 +18,20 @@ from app.modules.purchase_orders.models import (
 )
 
 
+# Purchase order item schemas
+
 class POItemCreate(BaseModel):
     product_id: int = Field(gt=0)
-    qty_ordered: Decimal = Field(gt=0, max_digits=14, decimal_places=3)
-    unit_price: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
-    tax_rate: Decimal = Field(default=Decimal("0"), ge=0, le=100)
+    qty_ordered: Decimal = Field(
+        gt=0, max_digits=14, decimal_places=3
+    )
+    unit_price: Decimal = Field(
+        ge=0, max_digits=12, decimal_places=2
+    )
+    tax_rate: Decimal = Field(
+        default=Decimal("0"), ge=0, le=100,
+        max_digits=5, decimal_places=2
+    )
 
 
 class POCreate(BaseModel):
@@ -26,26 +41,59 @@ class POCreate(BaseModel):
     warehouse_id: int = Field(gt=0)
     order_date: date
     expected_date: date
-    discount_amount: Decimal = Field(default=Decimal("0"), ge=0)
+    discount_amount: Decimal = Field(
+        default=Decimal("0"), ge=0
+    )
     currency: str = Field(default="INR", min_length=3, max_length=3)
     payment_terms: str | None = Field(default=None, max_length=40)
     notes: str | None = Field(default=None, max_length=500)
     created_by: int = Field(gt=0)
     items: list[POItemCreate] = Field(min_length=1)
 
+    @field_validator("po_number")
+    @classmethod
+    def validate_po_number(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("PO number cannot be empty")
+        return value
+
+    @field_validator("currency")
+    @classmethod
+    def validate_currency(cls, value: str) -> str:
+        value = value.strip().upper()
+        if len(value) != 3 or not value.isalpha():
+            raise ValueError("Currency must be a three-letter code")
+        return value
+
     @model_validator(mode="after")
     def check_dates(self):
         if self.expected_date < self.order_date:
-            raise ValueError("Expected date cannot be before order date")
+            raise ValueError(
+                "Expected date cannot be before order date"
+            )
         return self
 
 
 class POUpdate(BaseModel):
     expected_date: date | None = None
     discount_amount: Decimal | None = Field(default=None, ge=0)
-    currency: str | None = Field(default=None, min_length=3, max_length=3)
+    currency: str | None = Field(
+        default=None, min_length=3, max_length=3
+    )
     payment_terms: str | None = Field(default=None, max_length=40)
     notes: str | None = Field(default=None, max_length=500)
+
+    @field_validator("currency")
+    @classmethod
+    def validate_currency(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+
+        value = value.strip().upper()
+        if len(value) != 3 or not value.isalpha():
+            raise ValueError("Currency must be a three-letter code")
+        return value
 
 
 class POItemOut(BaseModel):
@@ -85,14 +133,29 @@ class POOut(BaseModel):
     items: list[POItemOut]
 
 
+# GRN item schemas
+
 class GRNItemCreate(BaseModel):
     po_item_id: int = Field(gt=0)
     product_id: int = Field(gt=0)
-    qty_received: Decimal = Field(gt=0, max_digits=14, decimal_places=3)
+    qty_received: Decimal = Field(
+        gt=0, max_digits=14, decimal_places=3
+    )
     batch_no: str | None = Field(default=None, max_length=64)
     expiry_date: date | None = None
-    unit_cost: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
+    unit_cost: Decimal = Field(
+        ge=0, max_digits=12, decimal_places=2
+    )
     qc_status: QCStatus = QCStatus.PASS
+
+    @field_validator("batch_no")
+    @classmethod
+    def validate_batch_no(cls, value: str | None) -> str | None:
+        if value is not None:
+            value = value.strip()
+            if not value:
+                return None
+        return value
 
     @model_validator(mode="after")
     def check_expiry(self):
@@ -108,6 +171,14 @@ class GRNCreate(BaseModel):
     warehouse_id: int = Field(gt=0)
     notes: str | None = Field(default=None, max_length=500)
     items: list[GRNItemCreate] = Field(min_length=1)
+
+    @field_validator("grn_no")
+    @classmethod
+    def validate_grn_no(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("GRN number cannot be empty")
+        return value
 
 
 class GRNItemOut(BaseModel):
