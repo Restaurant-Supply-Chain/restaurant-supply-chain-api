@@ -3,8 +3,6 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.modules.purchase_orders.models import (
-    GoodsReceiptNote,
-    GRNItem,
     PurchaseOrder,
     PurchaseOrderItem,
 )
