@@ -38,7 +38,7 @@ def create_po(
 def list_purchase_orders(
     db: Session = Depends(get_db),
 ):
-    return service.get_pos(db)
+    return service.list_pos(db)
 
 
 @router.get(
@@ -95,83 +95,4 @@ def approve_purchase_order(
     ),
     db: Session = Depends(get_db),
 ):
-    return service.approve_po(db, po_id, approved_by)
-
-
-@router.post(
-    "/purchase-orders/{po_id}/cancel",
-    response_model=POOut,
-)
-def cancel_purchase_order(
-    po_id: int,
-    db: Session = Depends(get_db),
-):
-    return service.cancel_po(db, po_id)
-
-
-@router.post(
-    "/purchase-orders/{po_id}/close",
-    response_model=POOut,
-)
-def close_purchase_order(
-    po_id: int,
-    db: Session = Depends(get_db),
-):
-    return service.close_po(db, po_id)
-
-
-# Goods Receipt Notes (GRN)
-
-@router.post(
-    "/grns",
-    response_model=GRNOut,
-    status_code=status.HTTP_201_CREATED,
-)
-def create_grn(
-    data: GRNCreate,
-    db: Session = Depends(get_db),
-):
-    return service.create_grn(db, data)
-
-
-@router.get(
-    "/grns",
-    response_model=list[GRNOut],
-)
-def list_grns(
-    db: Session = Depends(get_db),
-):
-    return service.list_grns(db)
-
-
-@router.get(
-    "/grns/{grn_id}",
-    response_model=GRNOut,
-)
-def get_grn(
-    grn_id: int,
-    db: Session = Depends(get_db),
-):
-    return service.get_grn(db, grn_id)
-
-
-@router.post(
-    "/grns/{grn_id}/confirm",
-    response_model=GRNOut,
-)
-def confirm_grn(
-    grn_id: int,
-    db: Session = Depends(get_db),
-):
-    return service.confirm_grn(db, grn_id)
-
-
-@router.post(
-    "/grns/{grn_id}/reject",
-    response_model=GRNOut,
-)
-def reject_grn(
-    grn_id: int,
-    db: Session = Depends(get_db),
-):
-    return service.reject_grn(db, grn_id)
+    return service.approve
