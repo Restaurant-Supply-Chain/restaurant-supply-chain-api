@@ -30,7 +30,6 @@ def create_user(db, data, password_hash):
         status=UserStatus.ACTIVE,
     )
     db.add(user)
-    db.commit()
-    # Load database-generated values such as the user ID.
-    db.refresh(user)
+    # Get the user ID; the service commits the user and related records together.
+    db.flush()
     return user

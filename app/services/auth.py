@@ -13,9 +13,11 @@ from app.crud.user import create_user, get_user_by_email, get_user_by_phone, get
 from app.models.refresh_token import RefreshToken
 from app.models.password_reset import PasswordReset
 from app.models.user import User
+from app.services.audit import record_audit
+from app.services.notification import create_notification
 
 
-def register_user(db, data):
+def register_user(db, data, ip_address=None):
     if get_user_by_email(db, data.email):
         raise HTTPException(status_code=409, detail="Email is already registered.")
     if data.phone and get_user_by_phone(db, data.phone):
@@ -23,7 +25,15 @@ def register_user(db, data):
 
     password_hash = hash_password(data.password)
     try:
-        return create_user(db, data, password_hash)
+        user = create_user(db, data, password_hash)
+        record_audit(db, "USER_REGISTERED", "users", user.id, user.id,
+                     after={"email": user.email, "role": user.role.value, "status": user.status.value},
+                     ip_address=ip_address)
+        create_notification(db, user.id, "WELCOME", "Welcome",
+                            "Your account is ready to use.")
+        db.commit()
+        db.refresh(user)
+        return user
     # Concurrent registrations can still hit the database uniqueness rule.
     except IntegrityError as error:
         db.rollback()
@@ -38,6 +48,8 @@ def login_user(db, data, ip_address=None, user_agent=None):
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     user = get_user_for_login(db, data.email)
     if not user:
+        record_audit(db, "LOGIN_FAILED", "users", ip_address=ip_address)
+        db.commit()
         raise HTTPException(status_code=401, detail="Invalid email or password.")
 
     if user.locked_until and user.locked_until > now:
@@ -54,6 +66,10 @@ def login_user(db, data, ip_address=None, user_agent=None):
         user.failed_login_count += 1
         if user.failed_login_count >= settings.LOGIN_MAX_ATTEMPTS:
             user.locked_until = now + timedelta(minutes=settings.LOGIN_LOCK_MINUTES)
+            create_notification(db, user.id, "ACCOUNT_LOCKED", "Account temporarily locked",
+                                "Too many failed login attempts. Please try again later.")
+        record_audit(db, "LOGIN_FAILED", "users", user.id,
+                     after={"failed_login_count": user.failed_login_count}, ip_address=ip_address)
         db.commit()
         raise HTTPException(status_code=401, detail="Invalid email or password.")
 
@@ -64,6 +80,7 @@ def login_user(db, data, ip_address=None, user_agent=None):
     user.failed_login_count = 0
     user.locked_until = None
     user.last_login_at = now
+    record_audit(db, "LOGIN_SUCCESS", "users", user.id, user.id, ip_address=ip_address)
     db.commit()
     return tokens
 
@@ -114,11 +131,12 @@ def refresh_user_tokens(db, data, ip_address=None, user_agent=None):
     # Revoke the old token and save its replacement in the same transaction.
     stored_token.revoked_at = now
     tokens = issue_tokens(db, user, now, ip_address, user_agent)
+    record_audit(db, "TOKEN_REFRESHED", "users", user.id, user.id, ip_address=ip_address)
     db.commit()
     return tokens
 
 
-def logout_user(db, data):
+def logout_user(db, data, ip_address=None):
     try:
         claims = decode_token(data.refresh_token, "refresh")
     except JWTError:
@@ -139,10 +157,11 @@ def logout_user(db, data):
     # Repeated logout succeeds without changing the original revocation time.
     if stored_token.revoked_at is None:
         stored_token.revoked_at = now
+        record_audit(db, "LOGOUT", "users", user.id, user.id, ip_address=ip_address)
     db.commit()
 
 
-def forgot_password(db, data):
+def forgot_password(db, data, ip_address=None):
     # Console delivery is only for this local practice project.
     if not settings.DEBUG:
         raise HTTPException(status_code=503, detail="Password reset delivery is not configured.")
@@ -163,12 +182,13 @@ def forgot_password(db, data):
         otp_hash=hash_password(otp),
         expires_at=now + timedelta(minutes=15),
     ))
+    record_audit(db, "PASSWORD_RESET_REQUESTED", "users", user.id, ip_address=ip_address)
     db.commit()
     print(f"Password reset for {user.email} - OTP: {otp}", flush=True)
     return message
 
 
-def reset_password(db, data):
+def reset_password(db, data, ip_address=None):
     invalid_otp = HTTPException(status_code=400, detail="Invalid or expired OTP.")
     user = get_user_for_login(db, data.email)
     if not user or user.status != UserStatus.ACTIVE:
@@ -189,5 +209,8 @@ def reset_password(db, data):
     db.query(RefreshToken).filter(
         RefreshToken.user_id == user.id, RefreshToken.revoked_at.is_(None),
     ).update({RefreshToken.revoked_at: now}, synchronize_session="fetch")
+    record_audit(db, "PASSWORD_RESET_SUCCESS", "users", user.id, user.id, ip_address=ip_address)
+    create_notification(db, user.id, "PASSWORD_CHANGED", "Password changed",
+                        "Your password was reset. Existing refresh sessions were revoked.")
     db.commit()
     return {"message": "Password reset successfully."}

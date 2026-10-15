@@ -4,17 +4,35 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.auth import ForgotPasswordRequest, MessageResponse, RefreshRequest, ResetPasswordRequest, TokenResponse, UserLogin
+from app.schemas.auth import (
+    ForgotPasswordRequest,
+    MessageResponse,
+    RefreshRequest,
+    ResetPasswordRequest,
+    TokenResponse,
+    UserLogin,
+)
 from app.schemas.user import UserRegister, UserResponse
-from app.services.auth import forgot_password, login_user, logout_user, refresh_user_tokens, register_user, reset_password
+from app.services.auth import (
+    forgot_password,
+    login_user,
+    logout_user,
+    refresh_user_tokens,
+    register_user,
+    reset_password,
+)
 
 
-router = APIRouter(prefix="/auth", tags=["Authentication"])
+router = APIRouter(
+    prefix="/auth",
+    tags=["Authentication"],
+)
 
 
 @router.post("/register", response_model=UserResponse, status_code=201)
-def register(data: UserRegister, db: Session = Depends(get_db)):
-    return register_user(db, data)
+def register(data: UserRegister, request: Request, db: Session = Depends(get_db)):
+    ip_address = request.client.host if request.client else None
+    return register_user(db, data, ip_address)
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -30,8 +48,9 @@ def refresh(data: RefreshRequest, request: Request, db: Session = Depends(get_db
 
 
 @router.post("/logout", status_code=204)
-def logout(data: RefreshRequest, db: Session = Depends(get_db)):
-    logout_user(db, data)
+def logout(data: RefreshRequest, request: Request, db: Session = Depends(get_db)):
+    ip_address = request.client.host if request.client else None
+    logout_user(db, data, ip_address)
     return Response(status_code=204)
 
 
@@ -41,10 +60,12 @@ def me(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/forgot-password", response_model=MessageResponse)
-def forgot(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
-    return forgot_password(db, data)
+def forgot(data: ForgotPasswordRequest, request: Request, db: Session = Depends(get_db)):
+    ip_address = request.client.host if request.client else None
+    return forgot_password(db, data, ip_address)
 
 
 @router.post("/reset-password", response_model=MessageResponse)
-def reset(data: ResetPasswordRequest, db: Session = Depends(get_db)):
-    return reset_password(db, data)
+def reset(data: ResetPasswordRequest, request: Request, db: Session = Depends(get_db)):
+    ip_address = request.client.host if request.client else None
+    return reset_password(db, data, ip_address)
