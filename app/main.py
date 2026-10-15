@@ -11,6 +11,8 @@ app = FastAPI(
     version="0.1.0",
 )
 
+app.include_router(purchase_orders_router)
+
 
 @app.get("/health", tags=["Health"])
 def health_check():
