@@ -1,141 +1,249 @@
 
-from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from datetime import date, datetime
+from decimal import Decimal
+from enum import Enum as PyEnum
 
-from app.modules.purchase_orders.models import (
-    PurchaseOrder,
-    PurchaseOrderItem,
+from sqlalchemy import (
+    BigInteger,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Numeric,
+    String,
+    Text,
+    func,
 )
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
-def confirm_grn(db: Session, grn_id: int):
-    try:
-        grn = (
-            db.query(GoodsReceiptNote)
-            .filter(GoodsReceiptNote.id == grn_id)
-            .with_for_update()
-            .first()
-        )
+class Base(DeclarativeBase):
+    pass
 
-        if grn is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Goods receipt note not found",
-            )
 
-        if grn.status == "CONFIRMED":
-            raise HTTPException(
-                status_code=409,
-                detail="GRN is already confirmed",
-            )
+class POStatus(str, PyEnum):
+    DRAFT = "DRAFT"
+    SUBMITTED = "SUBMITTED"
+    APPROVED = "APPROVED"
+    PARTIALLY_RECEIVED = "PARTIALLY_RECEIVED"
+    RECEIVED = "RECEIVED"
+    CANCELLED = "CANCELLED"
+    CLOSED = "CLOSED"
 
-        if grn.status != "PENDING":
-            raise HTTPException(
-                status_code=400,
-                detail="Only pending GRNs can be confirmed",
-            )
 
-        po = (
-            db.query(PurchaseOrder)
-            .filter(PurchaseOrder.id == grn.po_id)
-            .with_for_update()
-            .first()
-        )
+class ReceivedStatus(str, PyEnum):
+    PENDING = "PENDING"
+    PARTIAL = "PARTIAL"
+    COMPLETE = "COMPLETE"
 
-        if po is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Purchase order not found",
-            )
 
-        if po.status not in ("APPROVED", "PARTIALLY_RECEIVED"):
-            raise HTTPException(
-                status_code=400,
-                detail="Purchase order cannot receive items in its current status",
-            )
+class GRNStatus(str, PyEnum):
+    PENDING = "PENDING"
+    CONFIRMED = "CONFIRMED"
+    REJECTED = "REJECTED"
 
-        grn_items = (
-            db.query(GRNItem)
-            .filter(GRNItem.grn_id == grn.id)
-            .all()
-        )
 
-        if not grn_items:
-            raise HTTPException(
-                status_code=400,
-                detail="GRN must contain at least one item",
-            )
+class QCStatus(str, PyEnum):
+    PENDING = "PENDING"
+    PASS = "PASS"
+    FAIL = "FAIL"
 
-        po_items = (
-            db.query(PurchaseOrderItem)
-            .filter(PurchaseOrderItem.po_id == po.id)
-            .with_for_update()
-            .all()
-        )
 
-        po_items_by_product = {
-            item.product_id: item for item in po_items
-        }
+class PurchaseOrder(Base):
+    __tablename__ = "purchase_orders"
 
-        # Validate every line before changing quantities.
-        received_by_product = {}
+    id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=True
+    )
+    po_number: Mapped[str] = mapped_column(
+        String(32), unique=True, nullable=False
+    )
 
-        for item in grn_items:
-            quantity = item.qty_received
+    restaurant_id: Mapped[int] = mapped_column(
+        BigInteger, nullable=False
+    )
+    supplier_id: Mapped[int] = mapped_column(
+        BigInteger, nullable=False
+    )
+    warehouse_id: Mapped[int] = mapped_column(
+        BigInteger, nullable=False
+    )
 
-            if quantity is None or quantity <= 0:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Received quantity must be greater than zero",
-                )
+    status: Mapped[POStatus] = mapped_column(
+        Enum(POStatus, name="po_status"), nullable=False,
+        default=POStatus.DRAFT
+    )
 
-            if item.product_id not in po_items_by_product:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Product {item.product_id} is not in the purchase order",
-                )
+    order_date: Mapped[date] = mapped_column(Date, nullable=False)
+    expected_date: Mapped[date] = mapped_column(Date, nullable=False)
 
-            received_by_product[item.product_id] = (
-                received_by_product.get(item.product_id, 0) + quantity
-            )
+    subtotal: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=Decimal("0")
+    )
+    tax_amount: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=Decimal("0")
+    )
+    discount_amount: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=Decimal("0")
+    )
+    total_amount: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=Decimal("0")
+    )
 
-        for product_id, quantity in received_by_product.items():
-            po_item = po_items_by_product[product_id]
+    currency: Mapped[str] = mapped_column(
+        String(3), nullable=False, default="INR"
+    )
+    payment_terms: Mapped[str | None] = mapped_column(
+        String(40), nullable=True
+    )
+    notes: Mapped[str | None] = mapped_column(
+        String(500), nullable=True
+    )
 
-            if po_item.qty_received + quantity > po_item.qty_ordered:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Received quantity exceeds ordered quantity for product {product_id}",
-                )
+    created_by: Mapped[int] = mapped_column(
+        BigInteger, nullable=False
+    )
+    approved_by: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True
+    )
 
-        # Update purchase-order quantities.
-        for product_id, quantity in received_by_product.items():
-            po_item = po_items_by_product[product_id]
-            po_item.qty_received += quantity
+    items: Mapped[list["PurchaseOrderItem"]] = relationship(
+        back_populates="purchase_order",
+        cascade="all, delete-orphan",
+    )
 
-            po_item.received_status = (
-                "COMPLETE"
-                if po_item.qty_received >= po_item.qty_ordered
-                else "PARTIAL"
-            )
+    grns: Mapped[list["GoodsReceiptNote"]] = relationship(
+        back_populates="purchase_order"
+    )
 
-        all_received = all(
-            item.qty_received >= item.qty_ordered
-            for item in po_items
-        )
 
-        po.status = (
-            "RECEIVED" if all_received else "PARTIALLY_RECEIVED"
-        )
+class PurchaseOrderItem(Base):
+    __tablename__ = "purchase_order_items"
 
-        # Mark the GRN confirmed only after its PO quantities are updated.
-        grn.status = "CONFIRMED"
+    id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=True
+    )
+    po_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("purchase_orders.id"),
+        nullable=False,
+    )
+    product_id: Mapped[int] = mapped_column(
+        BigInteger, nullable=False
+    )
 
-        db.commit()
-        db.refresh(grn)
+    qty_ordered: Mapped[Decimal] = mapped_column(
+        Numeric(14, 3), nullable=False
+    )
+    qty_received: Mapped[Decimal] = mapped_column(
+        Numeric(14, 3), nullable=False, default=Decimal("0")
+    )
+    unit_price: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False
+    )
+    tax_rate: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=Decimal("0")
+    )
+    line_total: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False
+    )
 
-        return grn
+    received_status: Mapped[ReceivedStatus] = mapped_column(
+        Enum(ReceivedStatus, name="received_status"),
+        nullable=False,
+        default=ReceivedStatus.PENDING,
+    )
 
-    except Exception:
-        db.rollback()
-        raise
+    purchase_order: Mapped["PurchaseOrder"] = relationship(
+        back_populates="items"
+    )
+    grn_items: Mapped[list["GRNItem"]] = relationship(
+        back_populates="purchase_order_item"
+    )
+
+
+class GoodsReceiptNote(Base):
+    __tablename__ = "goods_receipt_notes"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=True
+    )
+    grn_no: Mapped[str] = mapped_column(
+        String(32), unique=True, nullable=False
+    )
+    po_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("purchase_orders.id"),
+        nullable=False,
+    )
+    received_by: Mapped[int] = mapped_column(
+        BigInteger, nullable=False
+    )
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    warehouse_id: Mapped[int] = mapped_column(
+        BigInteger, nullable=False
+    )
+    status: Mapped[GRNStatus] = mapped_column(
+        Enum(GRNStatus, name="grn_status"),
+        nullable=False,
+        default=GRNStatus.PENDING,
+    )
+    notes: Mapped[str | None] = mapped_column(
+        String(500), nullable=True
+    )
+
+    purchase_order: Mapped["PurchaseOrder"] = relationship(
+        back_populates="grns"
+    )
+    items: Mapped[list["GRNItem"]] = relationship(
+        back_populates="grn",
+        cascade="all, delete-orphan",
+    )
+
+
+class GRNItem(Base):
+    __tablename__ = "grn_items"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=True
+    )
+    grn_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("goods_receipt_notes.id"),
+        nullable=False,
+    )
+    po_item_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("purchase_order_items.id"),
+        nullable=False,
+    )
+    product_id: Mapped[int] = mapped_column(
+        BigInteger, nullable=False
+    )
+
+    qty_received: Mapped[Decimal] = mapped_column(
+        Numeric(14, 3), nullable=False
+    )
+    batch_no: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    expiry_date: Mapped[date | None] = mapped_column(
+        Date, nullable=True
+    )
+    unit_cost: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False
+    )
+    qc_status: Mapped[QCStatus] = mapped_column(
+        Enum(QCStatus, name="qc_status"),
+        nullable=False,
+        default=QCStatus.PASS,
+    )
+
+    grn: Mapped["GoodsReceiptNote"] = relationship(
+        back_populates="items"
+    )
+    purchase_order_item: Mapped["PurchaseOrderItem"] = relationship(
+        back_populates="grn_items"
+    )
