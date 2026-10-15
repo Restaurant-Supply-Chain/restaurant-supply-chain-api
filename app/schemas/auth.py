@@ -1,5 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
+from app.utils.validators import validate_password
+
 
 class UserLogin(BaseModel):
     email: EmailStr = Field(max_length=254)
@@ -27,3 +29,26 @@ class TokenResponse(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str = Field(min_length=1, max_length=2048)
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr = Field(max_length=254)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value):
+        return value.strip().lower() if isinstance(value, str) else value
+
+
+class ResetPasswordRequest(ForgotPasswordRequest):
+    otp: str = Field(pattern=r"^[0-9]{6}$")
+    new_password: str = Field(min_length=8)
+
+    @field_validator("new_password")
+    @classmethod
+    def check_password(cls, value):
+        return validate_password(value)
+
+
+class MessageResponse(BaseModel):
+    message: str

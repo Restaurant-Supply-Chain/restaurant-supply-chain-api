@@ -1,4 +1,5 @@
 import math
+import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
@@ -10,6 +11,7 @@ from app.core.constants import UserStatus
 from app.core.security import create_token, decode_token, hash_password, hash_token, verify_password
 from app.crud.user import create_user, get_user_by_email, get_user_by_phone, get_user_for_login
 from app.models.refresh_token import RefreshToken
+from app.models.password_reset import PasswordReset
 from app.models.user import User
 
 
@@ -138,3 +140,54 @@ def logout_user(db, data):
     if stored_token.revoked_at is None:
         stored_token.revoked_at = now
     db.commit()
+
+
+def forgot_password(db, data):
+    # Console delivery is only for this local practice project.
+    if not settings.DEBUG:
+        raise HTTPException(status_code=503, detail="Password reset delivery is not configured.")
+
+    message = {"message": "If an active account exists, password reset instructions have been generated."}
+    user = get_user_for_login(db, data.email)
+    if not user or user.status != UserStatus.ACTIVE:
+        return message
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    # A new request invalidates any older unused OTPs.
+    db.query(PasswordReset).filter(
+        PasswordReset.user_id == user.id, PasswordReset.used_at.is_(None),
+    ).update({PasswordReset.used_at: now}, synchronize_session="fetch")
+    otp = str(secrets.randbelow(1_000_000)).zfill(6)
+    db.add(PasswordReset(
+        user_id=user.id,
+        otp_hash=hash_password(otp),
+        expires_at=now + timedelta(minutes=15),
+    ))
+    db.commit()
+    print(f"Password reset for {user.email} - OTP: {otp}", flush=True)
+    return message
+
+
+def reset_password(db, data):
+    invalid_otp = HTTPException(status_code=400, detail="Invalid or expired OTP.")
+    user = get_user_for_login(db, data.email)
+    if not user or user.status != UserStatus.ACTIVE:
+        raise invalid_otp
+
+    reset = db.query(PasswordReset).filter(
+        PasswordReset.user_id == user.id, PasswordReset.used_at.is_(None),
+    ).order_by(PasswordReset.id.desc()).with_for_update().first()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if not reset or reset.expires_at <= now or not verify_password(data.otp, reset.otp_hash):
+        raise invalid_otp
+
+    user.password_hash = hash_password(data.new_password)
+    user.failed_login_count = 0
+    user.locked_until = None
+    reset.used_at = now
+    # Revoke existing refresh sessions when the password changes.
+    db.query(RefreshToken).filter(
+        RefreshToken.user_id == user.id, RefreshToken.revoked_at.is_(None),
+    ).update({RefreshToken.revoked_at: now}, synchronize_session="fetch")
+    db.commit()
+    return {"message": "Password reset successfully."}
