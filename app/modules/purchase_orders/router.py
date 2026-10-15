@@ -1,5 +1,3 @@
-
-# Change this import to the location of your project's existing get_db function.
 from app.db.session import get_db
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
