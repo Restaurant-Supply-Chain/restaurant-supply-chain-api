@@ -28,12 +28,15 @@ def client(db):
     def test_db():
         yield db
 
+    # Each test gets a fresh rate-limit window; the limiter remains enabled.
+    app.state.auth_requests = {}
     app.dependency_overrides[get_db] = test_db
     try:
         with TestClient(app) as test_client:
             yield test_client
     finally:
         app.dependency_overrides.pop(get_db, None)
+        app.state.auth_requests = {}
 
 @pytest.fixture
 def login_tokens(client, db):

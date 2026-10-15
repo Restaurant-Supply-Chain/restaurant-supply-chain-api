@@ -6,6 +6,8 @@ from app.api.v1.routers.auth import router as auth_router
 from app.core.config import settings
 from app.core.exceptions import http_exception_handler, validation_exception_handler
 
+from app.middleware.auth_rate_limit import AuthRateLimitMiddleware
+
 app = FastAPI(
     title="Restaurant Supply Chain API",
     description="B2B API for restaurant supply chain management",
@@ -17,4 +19,5 @@ app = FastAPI(
 # This ensures a consistent error response format across the API.
 app.add_exception_handler(HTTPException, http_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_middleware(AuthRateLimitMiddleware)
 app.include_router(auth_router)
