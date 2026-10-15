@@ -1,3 +1,4 @@
+
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
@@ -8,40 +9,10 @@ from app.modules.purchase_orders.models import (
     PurchaseOrderItem,
 )
 
-def update_inventory(db: Session, warehouse_id: int, product_id: int, quantity):
-    """
-    Integration point for Dev 5's inventory module.
-
-    Replace this function's body with the actual inventory model
-    and stock-update logic used by Dev 5.
-    """
-    from app.modules.inventory.models import Inventory
-
-    inventory = (
-        db.query(Inventory)
-        .filter(
-            Inventory.warehouse_id == warehouse_id,
-            Inventory.product_id == product_id,
-        )
-        .with_for_update()
-        .first()
-    )
-
-    if inventory is None:
-        inventory = Inventory(
-            warehouse_id=warehouse_id,
-            product_id=product_id,
-            quantity=quantity,
-        )
-        db.add(inventory)
-    else:
-        inventory.quantity += quantity
-
-    db.flush()
-
 
 def confirm_grn(db: Session, grn_id: int):
     try:
+        # Find and lock the GRN
         grn = (
             db.query(GoodsReceiptNote)
             .filter(GoodsReceiptNote.id == grn_id)
@@ -67,6 +38,7 @@ def confirm_grn(db: Session, grn_id: int):
                 detail="Only pending GRNs can be confirmed",
             )
 
+        # Find and lock the purchase order
         po = (
             db.query(PurchaseOrder)
             .filter(PurchaseOrder.id == grn.po_id)
@@ -86,6 +58,7 @@ def confirm_grn(db: Session, grn_id: int):
                 detail="Purchase order is not available for receiving",
             )
 
+        # Get GRN items
         grn_items = (
             db.query(GRNItem)
             .filter(GRNItem.grn_id == grn.id)
@@ -98,59 +71,80 @@ def confirm_grn(db: Session, grn_id: int):
                 detail="GRN must contain at least one item",
             )
 
+        # Lock purchase order items
         po_items = (
             db.query(PurchaseOrderItem)
             .filter(PurchaseOrderItem.po_id == po.id)
             .with_for_update()
             .all()
         )
+
         po_items_by_product = {
             item.product_id: item for item in po_items
         }
 
+        # Validate and combine duplicate products in the GRN
+        received_by_product = {}
+
         for item in grn_items:
-            po_item = po_items_by_product.get(item.product_id)
+            quantity = item.qty_received
 
-            if po_item is None:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Product {item.product_id} is not in the purchase order",
-                )
-
-            if item.qty_received <= 0:
+            if quantity is None or quantity <= 0:
                 raise HTTPException(
                     status_code=400,
                     detail="Received quantity must be greater than zero",
                 )
 
-            if po_item.qty_received + item.qty_received > po_item.qty_ordered:
+            po_item = po_items_by_product.get(item.product_id)
+
+            if po_item is None:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Received quantity exceeds ordered quantity for product {item.product_id}",
+                    detail=(
+                        f"Product {item.product_id} "
+                        "is not in the purchase order"
+                    ),
                 )
 
-        for item in grn_items:
-            po_item = po_items_by_product[item.product_id]
-            po_item.qty_received += item.qty_received
-
-            update_inventory(
-                db=db,
-                warehouse_id=po.warehouse_id,
-                product_id=item.product_id,
-                quantity=item.qty_received,
+            received_by_product[item.product_id] = (
+                received_by_product.get(item.product_id, 0) + quantity
             )
+
+        # Check the total received quantity against the ordered quantity
+        for product_id, quantity in received_by_product.items():
+            po_item = po_items_by_product[product_id]
+            already_received = po_item.qty_received or 0
+
+            if already_received + quantity > po_item.qty_ordered:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Received quantity exceeds ordered quantity "
+                        f"for product {product_id}"
+                    ),
+                )
+
+        # Update purchase order item quantities
+        for product_id, quantity in received_by_product.items():
+            po_item = po_items_by_product[product_id]
+            po_item.qty_received = (po_item.qty_received or 0) + quantity
 
             if po_item.qty_received >= po_item.qty_ordered:
                 po_item.received_status = "COMPLETE"
             else:
                 po_item.received_status = "PARTIAL"
 
+        # Update the purchase order status
         all_received = all(
-            item.qty_received >= item.qty_ordered
+            (item.qty_received or 0) >= item.qty_ordered
             for item in po_items
         )
 
-        po.status = "RECEIVED" if all_received else "PARTIALLY_RECEIVED"
+        po.status = (
+            "RECEIVED" if all_received else "PARTIALLY_RECEIVED"
+        )
+
+        # Mark the GRN as confirmed
         grn.status = "CONFIRMED"
 
         db.commit()
