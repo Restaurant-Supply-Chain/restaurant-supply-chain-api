@@ -202,7 +202,9 @@ def update_po(
             and updates["expected_date"] is None
         ):
             updates
-    )
+    except Exception:
+        db.rollback()
+        raise
 
 
 def get_po(db: Session, po_id: int):
