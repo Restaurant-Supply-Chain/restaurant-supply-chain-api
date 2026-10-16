@@ -174,7 +174,6 @@ def list_pos(db: Session):
         .options(selectinload(PurchaseOrder.items))
         .order_by(PurchaseOrder.id.desc())
         .all()
-<<<<<<< Updated upstream
     )
 
 
@@ -203,7 +202,6 @@ def update_po(
             and updates["expected_date"] is None
         ):
             updates
-=======
     )
 
 
@@ -666,4 +664,4 @@ def reject_grn(db: Session, grn_id: int):
     except Exception:
         db.rollback()
         raise
->>>>>>> Stashed changes
+

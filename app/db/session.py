@@ -8,14 +8,8 @@ DATABASE_URL = (
     f"@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
 )
 
-<<<<<<< Updated upstream
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-=======
-engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True,
-)
->>>>>>> Stashed changes
+
 
 SessionLocal = sessionmaker(
     autocommit=False,
@@ -29,8 +23,4 @@ def get_db():
     try:
         yield db
     finally:
-<<<<<<< Updated upstream
         db.close()
-=======
-        db.close()
->>>>>>> Stashed changes

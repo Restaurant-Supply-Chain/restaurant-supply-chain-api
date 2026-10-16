@@ -1,8 +1,10 @@
-<<<<<<< Updated upstream
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
+from pathlib import Path
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DATABASE_URL = (
     f"mysql+pymysql://{settings.DB_USER}:{settings.DB_PASSWORD}"
@@ -27,10 +29,7 @@ def get_db():
         yield db
     finally:
         db.close()
-=======
-from pathlib import Path
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 
@@ -58,4 +57,4 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
->>>>>>> Stashed changes
+
