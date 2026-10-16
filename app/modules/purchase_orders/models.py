@@ -246,4 +246,8 @@ class GRNItem(Base):
     )
     purchase_order_item: Mapped["PurchaseOrderItem"] = relationship(
         back_populates="grn_items"
+<<<<<<< Updated upstream
     )
+=======
+    )
+>>>>>>> Stashed changes

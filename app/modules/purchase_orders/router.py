@@ -95,4 +95,8 @@ def approve_purchase_order(
     ),
     db: Session = Depends(get_db),
 ):
+<<<<<<< Updated upstream
     return service.approve
+=======
+    return service.approve
+>>>>>>> Stashed changes
