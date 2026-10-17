@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from app.routers.supplier import router as supplier_router
+from app.routers.sales_order import router as sales_order_router
 
 app = FastAPI(
     title="Restaurant Supply Chain API",
@@ -9,6 +10,7 @@ app = FastAPI(
 )
 
 app.include_router(supplier_router)
+app.include_router(sales_order_router)
 
 
 @app.get("/health", tags=["Health"])
